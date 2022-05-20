@@ -45,6 +45,11 @@ Concatenation ($concat$) and subsequencing ($slice$) of two sequences
 $e1, e2 \in Elwms$ shall be possible in $O(\log n)$.
 
 
+## Comments on Goals
+Goal 1 means that for operations a Seq was especially optimized for,
+the same operation on Elwms may take at most 4 times as long.
+And for operations that already take longer ($O(n)$),
+Elwms may take only twice as long.
 
-Consequently, also $insert$ and $remove$ are possible in $O(\log n)$.
+Goal 2 implies that also $insert$ and $remove$ are possible in $O(\log n)$.
 

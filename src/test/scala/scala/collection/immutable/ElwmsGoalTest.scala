@@ -18,7 +18,7 @@ class ElwmsGoalTest extends AnyFunSpec {
   val goal1SlowFactor = 2.0
   @`inline` def goal1Factor(isFast: Boolean): Double = if (isFast) goal1FastFactor else goal1SlowFactor
 
-  val nFast = 10_000
+  val nFast = 20_000
   val nSlow = 10
   @`inline` def n(isFast: Boolean): Int = if (isFast) nFast else nSlow
 
@@ -51,11 +51,10 @@ class ElwmsGoalTest extends AnyFunSpec {
     val timeOther = time(op, repetitions, other) // Must be computed before, otherwise a cold JVM will cause the test to fail
     val timeElwms = time(op, repetitions, elwms)
 
-    val ass = assert(timeElwms <= c * timeOther + eps)
     val ratio = timeElwms / timeOther
     if (isFast && _goal1FastFactorRes < ratio) _goal1FastFactorRes = ratio
     if (!isFast && _goal1SlowFactorRes < ratio) _goal1SlowFactorRes = ratio
-    ass
+    assert(timeElwms <= c * timeOther + eps)
   }
 
   def testOp(op: Seq[Int] => Unit, toStr: String, isListFast: Boolean, isVectorFast: Boolean): Unit = {
@@ -63,7 +62,11 @@ class ElwmsGoalTest extends AnyFunSpec {
     describe(name("Elwms")) {
       for ((emptyOther, isFast) <- Seq(List() -> isListFast, Vector() -> isVectorFast))
         describe(s"compared to ${name(emptyOther.toString.dropRight(2))}") {
-          for (init <- Seq[Seq[Int] => Seq[Int]](identity, _ ++ (1 to bigCollectionSize)))
+          for (init <- Seq[Seq[Int] => Seq[Int]](
+            identity,
+            _ ++ (1 to smallCollectionSize),
+            _ ++ (1 to bigCollectionSize),
+          ))
             describe(s"containing ${init(emptyOther).size} elements") {
               it(s"should take at most $goal1FastFactor times as long") {
                 checkTimeFactor(op, isFast, emptyOther, init)

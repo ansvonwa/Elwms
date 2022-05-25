@@ -18,24 +18,43 @@ class ElwmsGoalTest extends AnyFunSpec {
   val goal1SlowFactor = 2.0
   @`inline` def goal1Factor(isFast: Boolean): Double = if (isFast) goal1FastFactor else goal1SlowFactor
 
-  val nFast = 20_000
-  val nSlow = 10
-  @`inline` def n(isFast: Boolean): Int = if (isFast) nFast else nSlow
+  val timeFast = 0.1
+  val timeSlow = 0.1
+  @`inline` def testTime(isFast: Boolean): Double = if (isFast) timeFast else timeSlow
 
   val smallCollectionSize = 5
   val bigCollectionSize = 50_000
 
-  def time(op: Seq[Int] => Unit, repetitions: Int, seq: Seq[Int]): Double = {
-    val start = System.nanoTime()
-    assert(repetitions >= 0)
-    var i = repetitions
-    while (i > 0) {
-      op(seq)
-      i -= 1
+  def time(op: Seq[Int] => Unit, seq: Seq[Int], testTime: Double): Double = {
+    val nanosTime = (testTime * 1_000_000_000).toLong // ns
+    val start = System.nanoTime() // ns
+    val halfExpectedTime = start + nanosTime * 4 / 10 // ns
+    val desiredEndTime = start + nanosTime // ns
+    var numIterations = 10 / 2 // #
+    var i = 0 // #
+    while (System.nanoTime() < halfExpectedTime) {
+      numIterations *= 2
+      while (i < numIterations) {
+        op(seq)
+        i += 1
+      }
     }
-    val stop = System.nanoTime()
-    val seconds = (stop - start) / 1_000_000_000.0
-    seconds
+    var currentTime = System.nanoTime()
+    val halfTimeMeasured = (currentTime - start) / 1_000_000_000.0 // s
+    val halfTimeNumIterations = numIterations
+    while (currentTime < desiredEndTime) {
+      val remainingTime = (desiredEndTime - currentTime) / 1_000_000_000.0 // s
+      val elapsedTime = (currentTime - start) / 1_000_000_000.0
+      val remainingIterations = math.max(1, (numIterations * remainingTime * 0.8 / elapsedTime).toInt) // # = # * s * 1 / s
+      numIterations += remainingIterations
+      while (i < numIterations) {
+        op(seq)
+        i += 1
+      }
+      currentTime = System.nanoTime()
+    }
+    val stop = currentTime // ns
+    (stop - start).toDouble / i // ns/#
   }
 
   def checkTimeFactor(
@@ -46,10 +65,10 @@ class ElwmsGoalTest extends AnyFunSpec {
                      ): Assertion = {
     val elwms = init(Elwms[Int]())
     val other = init(emptyOther)
-    val repetitions = n(isFast)
+    val t = testTime(isFast)
     val c = goal1Factor(isFast)
-    val timeOther = time(op, repetitions, other) // Must be computed before, otherwise a cold JVM will cause the test to fail
-    val timeElwms = time(op, repetitions, elwms)
+    val timeOther = time(op, other, t) // Must be computed before, otherwise a cold JVM will cause the test to fail
+    val timeElwms = time(op, elwms, t)
 
     val ratio = timeElwms / timeOther
     if (isFast && _goal1FastFactorRes < ratio) _goal1FastFactorRes = ratio

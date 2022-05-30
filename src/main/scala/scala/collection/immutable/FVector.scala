@@ -28,7 +28,7 @@ import scala.collection.mutable.ReusableBuilder
 
 /** $factoryInfo
   * @define Coll `FVector`
-  * @define coll FVector
+  * @define coll fVector
   */
 @SerialVersionUID(3L)
 object FVector extends StrictOptimizedSeqFactory[FVector] {
@@ -91,11 +91,11 @@ object FVector extends StrictOptimizedSeqFactory[FVector] {
 
 /** FVector is a general-purpose, immutable data structure.  It provides random access and updates
   * in O(log n) time, as well as very fast append/prepend/tail/init (amortized O(1), worst case O(log n)).
-  * Because FVectors strike a good balance between fast random selections and fast random functional updates,
+  * Because fVectors strike a good balance between fast random selections and fast random functional updates,
   * they are currently the default implementation of immutable indexed sequences.
   *
   * FVectors are implemented by radix-balanced finger trees of width 32. There is a separate subclass
-  * for each level (0 to 6, with 0 being the empty FVector and 6 a tree with a maximum width of 64 at the
+  * for each level (0 to 6, with 0 being the empty fVector and 6 a tree with a maximum width of 64 at the
   * top level).
   *
   * Tree balancing:
@@ -126,7 +126,7 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
 
   override final def iterator: Iterator[A] =
     if(this.isInstanceOf[FVector0.type]) FVector.emptyIterator
-    else new NewFVectorIterator(this, length, FVectorSliceCount)
+    else new NewFVectorIterator(this, length, fVectorSliceCount)
 
   override final protected[collection] def filterImpl(pred: A => Boolean, isFlipped: Boolean): FVector[A] = {
     var i = 0
@@ -204,7 +204,7 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
   }
 
   protected[this] def prependedAll0[B >: A](prefix: collection.IterableOnce[B], k: Int): FVector[B] = {
-    val tinyAppendLimit = 4 + FVectorSliceCount
+    val tinyAppendLimit = 4 + fVectorSliceCount
     if (k < tinyAppendLimit /*|| k < (this.size >>> Log2ConcatFaster)*/) {
       var v: FVector[B] = this
       val it           = IndexedSeq.from(prefix).reverseIterator
@@ -219,7 +219,7 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
   }
 
   protected[this] def appendedAll0[B >: A](suffix: collection.IterableOnce[B], k: Int): FVector[B] = {
-    val tinyAppendLimit = 4 + FVectorSliceCount
+    val tinyAppendLimit = 4 + fVectorSliceCount
     if(k > 0 && k < tinyAppendLimit) {
       var v: FVector[B] = this
       suffix match {
@@ -248,11 +248,11 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
   protected[this] def slice0(lo: Int, hi: Int): FVector[A]
 
   /** Number of slices */
-  protected[immutable] def FVectorSliceCount: Int
+  protected[immutable] def fVectorSliceCount: Int
   /** Slice at index */
-  protected[immutable] def FVectorSlice(idx: Int): Array[_ <: AnyRef]
+  protected[immutable] def fVectorSlice(idx: Int): Array[_ <: AnyRef]
   /** Length of all slices up to and including index */
-  protected[immutable] def FVectorSlicePrefixLength(idx: Int): Int
+  protected[immutable] def fVectorSlicePrefixLength(idx: Int): Int
 
   override def copyToArray[B >: A](xs: Array[B], start: Int, len: Int): Int = iterator.copyToArray(xs, start, len)
 
@@ -286,10 +286,10 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
   }.asInstanceOf[A]
 
   override final def foreach[U](f: A => U): Unit = {
-    val c = FVectorSliceCount
+    val c = fVectorSliceCount
       var i = 0
       while(i < c) {
-        foreachRec(FVectorSliceDim(c, i)-1, FVectorSlice(i), f)
+        foreachRec(fVectorSliceDim(c, i)-1, fVectorSlice(i), f)
         i += 1
       }
   }
@@ -320,17 +320,17 @@ private sealed abstract class FVectorImpl[+A](_prefix1: Arr1) extends FVector[A]
 private sealed abstract class BigFVector[+A](_prefix1: Arr1, private[immutable] val suffix1: Arr1, private[immutable] val length0: Int) extends FVectorImpl[A](_prefix1) {
 
   protected[immutable] final def foreachRest[U](f: A => U): Unit = {
-    val c = FVectorSliceCount
+    val c = fVectorSliceCount
     var i = 1
     while(i < c) {
-      foreachRec(FVectorSliceDim(c, i)-1, FVectorSlice(i), f)
+      foreachRec(fVectorSliceDim(c, i)-1, fVectorSlice(i), f)
       i += 1
     }
   }
 }
 
 
-/** Empty FVector */
+/** Empty fVector */
 private object FVector0 extends BigFVector[Nothing](empty1, empty1, 0) {
 
   def apply(index: Int): Nothing = throw ioob(index)
@@ -349,9 +349,9 @@ private object FVector0 extends BigFVector[Nothing](empty1, empty1, 0) {
 
   protected[this] def slice0(lo: Int, hi: Int): FVector[Nothing] = this
 
-  protected[immutable] def FVectorSliceCount: Int = 0
-  protected[immutable] def FVectorSlice(idx: Int): Array[_ <: AnyRef] = null
-  protected[immutable] def FVectorSlicePrefixLength(idx: Int): Int = 0
+  protected[immutable] def fVectorSliceCount: Int = 0
+  protected[immutable] def fVectorSlice(idx: Int): Array[_ <: AnyRef] = null
+  protected[immutable] def fVectorSlicePrefixLength(idx: Int): Int = 0
 
   override def equals(o: Any): Boolean = {
     if(this eq o.asInstanceOf[AnyRef]) true
@@ -368,7 +368,7 @@ private object FVector0 extends BigFVector[Nothing](empty1, empty1, 0) {
     FVector.from(suffix)
 
   override protected[this] def ioob(index: Int): IndexOutOfBoundsException =
-    new IndexOutOfBoundsException(s"$index is out of bounds (empty FVector)")
+    new IndexOutOfBoundsException(s"$index is out of bounds (empty fVector)")
 }
 
 /** Flat ArraySeq-like structure */
@@ -411,9 +411,9 @@ private final class FVector1[+A](_data1: Arr1) extends FVectorImpl[A](_data1) {
     if(prefix1.length == 1) FVector0
     else new FVector1(copyInit(prefix1))
 
-  protected[immutable] def FVectorSliceCount: Int = 1
-  protected[immutable] def FVectorSlice(idx: Int): Array[_ <: AnyRef] = prefix1
-  protected[immutable] def FVectorSlicePrefixLength(idx: Int): Int = prefix1.length
+  protected[immutable] def fVectorSliceCount: Int = 1
+  protected[immutable] def fVectorSlice(idx: Int): Array[_ <: AnyRef] = prefix1
+  protected[immutable] def fVectorSlicePrefixLength(idx: Int): Int = prefix1.length
 
   override protected[this] def prependedAll0[B >: A](prefix: collection.IterableOnce[B], k: Int): FVector[B] = {
     val data1b = prepend1IfSpace(prefix1, prefix)
@@ -498,13 +498,13 @@ private final class FVector2[+A](_prefix1: Arr1, private[immutable] val len1: In
     if(suffix1.length > 1) copy(suffix1 = copyInit(suffix1), length0 = length0-1)
     else slice0(0, length0-1)
 
-  protected[immutable] def FVectorSliceCount: Int = 3
-  protected[immutable] def FVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
+  protected[immutable] def fVectorSliceCount: Int = 3
+  protected[immutable] def fVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
     case 0 => prefix1
     case 1 => data2
     case 2 => suffix1
   }
-  protected[immutable] def FVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
+  protected[immutable] def fVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
     case 0 => len1
     case 1 => length0 - suffix1.length
     case 2 => length0
@@ -610,15 +610,15 @@ private final class FVector3[+A](_prefix1: Arr1, private[immutable] val len1: In
     if(suffix1.length > 1) copy(suffix1 = copyInit(suffix1), length0 = length0-1)
     else slice0(0, length0-1)
 
-  protected[immutable] def FVectorSliceCount: Int = 5
-  protected[immutable] def FVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
+  protected[immutable] def fVectorSliceCount: Int = 5
+  protected[immutable] def fVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
     case 0 => prefix1
     case 1 => prefix2
     case 2 => data3
     case 3 => suffix2
     case 4 => suffix1
   }
-  protected[immutable] def FVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
+  protected[immutable] def fVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
     case 0 => len1
     case 1 => len12
     case 2 => len12 + data3.length*WIDTH2
@@ -742,8 +742,8 @@ private final class FVector4[+A](_prefix1: Arr1, private[immutable] val len1: In
     if(suffix1.length > 1) copy(suffix1 = copyInit(suffix1), length0 = length0-1)
     else slice0(0, length0-1)
 
-  protected[immutable] def FVectorSliceCount: Int = 7
-  protected[immutable] def FVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
+  protected[immutable] def fVectorSliceCount: Int = 7
+  protected[immutable] def fVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
     case 0 => prefix1
     case 1 => prefix2
     case 2 => prefix3
@@ -752,7 +752,7 @@ private final class FVector4[+A](_prefix1: Arr1, private[immutable] val len1: In
     case 5 => suffix2
     case 6 => suffix1
   }
-  protected[immutable] def FVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
+  protected[immutable] def fVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
     case 0 => len1
     case 1 => len12
     case 2 => len123
@@ -895,8 +895,8 @@ private final class FVector5[+A](_prefix1: Arr1, private[immutable] val len1: In
     if(suffix1.length > 1) copy(suffix1 = copyInit(suffix1), length0 = length0-1)
     else slice0(0, length0-1)
 
-  protected[immutable] def FVectorSliceCount: Int = 9
-  protected[immutable] def FVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
+  protected[immutable] def fVectorSliceCount: Int = 9
+  protected[immutable] def fVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
     case 0 => prefix1
     case 1 => prefix2
     case 2 => prefix3
@@ -907,7 +907,7 @@ private final class FVector5[+A](_prefix1: Arr1, private[immutable] val len1: In
     case 7 => suffix2
     case 8 => suffix1
   }
-  protected[immutable] def FVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
+  protected[immutable] def fVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
     case 0 => len1
     case 1 => len12
     case 2 => len123
@@ -1068,8 +1068,8 @@ private final class FVector6[+A](_prefix1: Arr1, private[immutable] val len1: In
     if(suffix1.length > 1) copy(suffix1 = copyInit(suffix1), length0 = length0-1)
     else slice0(0, length0-1)
 
-  protected[immutable] def FVectorSliceCount: Int = 11
-  protected[immutable] def FVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
+  protected[immutable] def fVectorSliceCount: Int = 11
+  protected[immutable] def fVectorSlice(idx: Int): Array[_ <: AnyRef] = (idx: @switch) match {
     case 0 => prefix1
     case 1 => prefix2
     case 2 => prefix3
@@ -1082,7 +1082,7 @@ private final class FVector6[+A](_prefix1: Arr1, private[immutable] val len1: In
     case 9 => suffix2
     case 10 => suffix1
   }
-  protected[immutable] def FVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
+  protected[immutable] def fVectorSlicePrefixLength(idx: Int): Int = (idx: @switch) match {
     case 0 => len1
     case 1 => len12
     case 2 => len123
@@ -1110,11 +1110,11 @@ private final class FVector6[+A](_prefix1: Arr1, private[immutable] val len1: In
 }
 
 
-/** Helper class for FVector slicing. It is initialized with the validated start and end index,
-  * then the FVector slices are added in succession with `consider`. No matter what the dimension
-  * of the originating FVector is or where the cut is performed, this always results in a
+/** Helper class for fVector slicing. It is initialized with the validated start and end index,
+  * then the fVector slices are added in succession with `consider`. No matter what the dimension
+  * of the originating fVector is or where the cut is performed, this always results in a
   * structure with the highest-dimensional data in the middle and fingers of decreasing dimension
-  * at both ends, which can be turned into a new FVector with very little rebalancing.
+  * at both ends, which can be turned into a new fVector with very little rebalancing.
   */
 private final class FVectorSliceBuilder(lo: Int, hi: Int) {
   //println(s"***** FVectorSliceBuilder($lo, $hi)")
@@ -1419,7 +1419,7 @@ final class FVectorBuilder[A] extends ReusableBuilder[A, FVector[A]] {
   }
 
   private[immutable] def initFrom(v: FVector[_]): this.type = {
-    (v.FVectorSliceCount: @switch) match {
+    (v.fVectorSliceCount: @switch) match {
       case 0 =>
       case 1 =>
         val v1 = v.asInstanceOf[FVector1[_]]
@@ -1544,11 +1544,11 @@ final class FVectorBuilder[A] extends ReusableBuilder[A, FVector[A]] {
   }
 
   private[this] def addFVector(xs: FVector[A]): this.type = {
-    val sliceCount = xs.FVectorSliceCount
+    val sliceCount = xs.fVectorSliceCount
     var sliceIdx = 0
     while(sliceIdx < sliceCount) {
-      val slice = xs.FVectorSlice(sliceIdx)
-      FVectorSliceDim(sliceCount, sliceIdx) match {
+      val slice = xs.fVectorSlice(sliceIdx)
+      fVectorSliceDim(sliceCount, sliceIdx) match {
         case 1 => addArr1(slice.asInstanceOf[Arr1])
         case n => foreachRec(n-2, slice, addArr1)
       }
@@ -1745,7 +1745,7 @@ private[immutable] object FVectorInline {
   type Arr6 = Array[Array[Array[Array[Array[Array[AnyRef]]]]]]
 
   /** Dimension of the slice at index */
-  @inline def FVectorSliceDim(count: Int, idx: Int): Int = {
+  @inline def fVectorSliceDim(count: Int, idx: Int): Int = {
     val c = count/2
     c+1-abs(idx-c)
   }
@@ -1998,13 +1998,13 @@ private final class NewFVectorIterator[A](v: FVector[A], private[this] var total
   private[this] def advanceSlice(): Unit = {
     if(!hasNext) Iterator.empty.next()
     sliceIdx += 1
-    var slice: Array[_ <: AnyRef] = v.FVectorSlice(sliceIdx)
+    var slice: Array[_ <: AnyRef] = v.fVectorSlice(sliceIdx)
     while(slice.length == 0) {
       sliceIdx += 1
-      slice = v.FVectorSlice(sliceIdx)
+      slice = v.fVectorSlice(sliceIdx)
     }
     sliceStart = sliceEnd
-    sliceDim = FVectorSliceDim(sliceCount, sliceIdx)
+    sliceDim = fVectorSliceDim(sliceCount, sliceIdx)
     (sliceDim: @switch) match {
       case 1 => a1 = slice.asInstanceOf[Arr1]
       case 2 => a2 = slice.asInstanceOf[Arr2]

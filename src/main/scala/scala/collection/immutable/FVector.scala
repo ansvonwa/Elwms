@@ -52,9 +52,9 @@ object FVector extends StrictOptimizedSeqFactory[FVector] {
             case _ =>
               val a1 = new Arr1(knownSize)
               it.iterator.copyToArray(a1.asInstanceOf[Array[Any]])
-              a1.asInstanceOf[Arr1]
+              a1
           }
-          new FVector1[E](a1)
+          new FVector1[E](a1, null, null, null, null, a1.length)
         } else {
           (newBuilder ++= it).result()
         }
@@ -120,19 +120,38 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
 
   override def iterableFactory: SeqFactory[FVector] = FVector
 
-  override final def length: Int =
-    if(this.isInstanceOf[BigFVector[_]]) this.asInstanceOf[BigFVector[_]].length0
-    else prefix1.length
+  override final def length: Int = // todo: can this be moved to FVectorImpl and FVector6 preserving bin compat?
+    this.asInstanceOf[FVectorImpl[_]].length0
 
   override final def iterator: Iterator[A] =
     if(this.isInstanceOf[FVector0.type]) FVector.emptyIterator
     else new NewFVectorIterator(this, length, fVectorSliceCount)
 
   override final protected[collection] def filterImpl(pred: A => Boolean, isFlipped: Boolean): FVector[A] = {
+    if (this.asInstanceOf[AnyRef] eq Vector0.asInstanceOf[AnyRef]) return empty
+    var preBufBitmap = 0
+    val impl = this.asInstanceOf[FVectorImpl[A]];
+    {
+      val preBufLen = impl.preBufferLen
+      assert(preBufLen <= 4)
+      if (preBufLen >= 1) {
+        if (pred(impl.buffer1.asInstanceOf[A]) != isFlipped) preBufBitmap |= 1
+        if (preBufLen >= 2) {
+          if (pred(impl.buffer2.asInstanceOf[A]) != isFlipped) preBufBitmap |= 2
+          if (preBufLen >= 3) {
+            if (pred(impl.buffer3.asInstanceOf[A]) != isFlipped) preBufBitmap |= 4
+            if (preBufLen >= 4) {
+              if (pred(impl.buffer4.asInstanceOf[A]) != isFlipped) preBufBitmap |= 8
+            }
+          }
+        }
+      }
+    }
+    val newPreBufLen = java.lang.Integer.bitCount(preBufBitmap)
     var i = 0
     val len = prefix1.length
     while (i != len) {
-      if (pred(prefix1(i).asInstanceOf[A]) == isFlipped) {
+      if (pred(prefix1(i).asInstanceOf[A]) == isFlipped) { // i is the first failing index (in prefix1)
         // each 1 bit indicates that index passes the filter.
         // all indices < i are also assumed to pass the filter
         var bitmap = 0
@@ -143,17 +162,25 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
           }
           j += 1
         }
-        val newLen = i + java.lang.Integer.bitCount(bitmap)
+        val newArrLen = i + java.lang.Integer.bitCount(bitmap)
 
         if(this.isInstanceOf[BigFVector[_]]) {
           val b = new FVectorBuilder[A]
+          if (newPreBufLen >= 1) { // if preBuf is empty, skip bitmap checks
+            if (preBufBitmap & 1 != 0) b.addOne(impl.buffer1.asInstanceOf[A])
+            if (newPreBufLen >= 2) {
+              if (preBufBitmap & 2 != 0) b.addOne(impl.buffer2.asInstanceOf[A])
+              if (preBufBitmap & 4 != 0) b.addOne(impl.buffer3.asInstanceOf[A])
+              if (preBufBitmap & 8 != 0) b.addOne(impl.buffer4.asInstanceOf[A])
+            }
+          }
           var k = 0
           while(k < i) {
             b.addOne(prefix1(k).asInstanceOf[A])
             k += 1
           }
           k = i + 1
-          while (i != newLen) {
+          while (i != newArrLen) {
             if (((1 << k) & bitmap) != 0) {
               b.addOne(prefix1(k).asInstanceOf[A])
               i += 1
@@ -163,18 +190,46 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
           this.asInstanceOf[BigFVector[A]].foreachRest { v => if(pred(v) != isFlipped) b.addOne(v) }
           return b.result()
         } else {
+          var sufBufBitmap = 0;
+          {
+            val sufBufLen = impl.sufBufferLen
+            if (sufBufLen >= 4 && pred(impl.buffer1.asInstanceOf[A]) != isFlipped) sufBufBitmap |= 8
+            if (sufBufLen >= 3 && pred(impl.buffer2.asInstanceOf[A]) != isFlipped) sufBufBitmap |= 4
+            if (sufBufLen >= 2 && pred(impl.buffer3.asInstanceOf[A]) != isFlipped) sufBufBitmap |= 2
+            if (sufBufLen >= 1 && pred(impl.buffer4.asInstanceOf[A]) != isFlipped) sufBufBitmap |= 1
+          }
+          val newSufBufLen = java.lang.Integer.bitCount(sufBufBitmap)
+          val newLen = newArrLen + newPreBufLen + newSufBufLen
           if (newLen == 0) return FVector0
-          val newData = new Array[AnyRef](newLen)
-          System.arraycopy(prefix1, 0, newData, 0, i)
+          val normalizedArrLen = mmax(0, newLen - 2)
+          val newData = if (normalizedArrLen > 0) new Array[AnyRef](normalizedArrLen) else empty1
+          var newBuffer1 =
+            if (newPreBufLen == 0)
+              if (i > 0) prefix1(0) else null
+            else java.lang.Integer.lowestOneBit(preBufBitmap) match {
+              case 1 => impl.buffer1
+              case 2 => impl.buffer2
+              case 4 => impl.buffer3
+              case 8 => impl.buffer4
+            }
+          // todo: prepend buffer{2..4} to newData
+          System.arraycopy(prefix1, mmax(0, 1 - newPreBufLen), newData, mmax(0, newPreBufLen - 1), i)
+          if (newBuffer1 == null) i = -1 // did not get a new buffer1 ~> i == 0 ~> pretend we can write to newData(-1)
           var k = i + 1
-          while (i != newLen) {
+          while (i != normalizedArrLen) {
             if (((1 << k) & bitmap) != 0) {
-              newData(i) = prefix1(k)
+              if (i == -1) newBuffer1 = prefix1(k)
+              else newData(i) = prefix1(k)
               i += 1
             }
             k += 1
           }
-          return new FVector1[A](newData)
+          // todo prepend buffer{1..4} if newSufBufLen > 0
+          val newBuffer4: AnyRef = if (newLen >= 2) {
+            ???.asInstanceOf[AnyRef] // last one bit from bitmap, or buffer{1..4}
+          } else null
+          val newBufAndLen = newLen | (1 << PREBITS) | (if (newLen >= 2) 1 << SUFBITS else 0)
+          return new FVector1[A](newData, newBuffer1, null, null, newBuffer4, newBufAndLen)
         }
       }
       i += 1
@@ -273,9 +328,13 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
   protected[this] def ioob(index: Int): IndexOutOfBoundsException =
     new IndexOutOfBoundsException(s"$index is out of bounds (min 0, max ${length-1})")
 
-  override final def head: A =
-    if (prefix1.length == 0) throw new NoSuchElementException("empty.head")
-    else prefix1(0).asInstanceOf[A]
+  override final def head: A = this.asInstanceOf[AnyRef] match {
+    case _: Vector0.type => throw new NoSuchElementException("empty.head")
+    case impl: FVectorImpl[_] => impl.preBufferLen match {
+      case 0 => prefix1(0).asInstanceOf[A]
+      case _ => impl.buffer1.asInstanceOf[A]
+    }
+  }
 
   override final def last: A = {
     if(this.isInstanceOf[BigFVector[_]]) {
@@ -303,7 +362,14 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
 
 
 /** This class only exists because we cannot override `slice` in `FVector` in a binary-compatible way */
-private sealed abstract class FVectorImpl[+A](_prefix1: Arr1) extends FVector[A](_prefix1) {
+private sealed abstract class FVectorImpl[+A](
+                                               _prefix1: Arr1,
+                                               private[immutable] final val buffer1: AnyRef,
+                                               private[immutable] final val buffer2: AnyRef,
+                                               private[immutable] final val buffer3: AnyRef,
+                                               private[immutable] final val buffer4: AnyRef,
+                                               private[immutable] val bufferLengthsAndLength0: Int,
+                                             ) extends FVector[A](_prefix1) {
 
   override final def slice(from: Int, until: Int): FVector[A] = {
     val lo = mmax(from, 0)
@@ -313,11 +379,24 @@ private sealed abstract class FVectorImpl[+A](_prefix1: Arr1) extends FVector[A]
     else if(hi <= lo) FVector0
     else slice0(lo, hi)
   }
+
+  @`inline` private[immutable] def length0: Int = bufferLengthsAndLength0 & LENGTHMASK
+  @`inline` private[immutable] def preBufferLen: Int = bufferLengthsAndLength0 >>> PREBITS
+  @`inline` private[immutable] def sufBufferLen: Int = (bufferLengthsAndLength0 >>> SUFBITS) & BUFFERMASK
+
 }
 
 
 /** FVector with suffix and length fields; all FVector subclasses except FVector1 extend this */
-private sealed abstract class BigFVector[+A](_prefix1: Arr1, private[immutable] val suffix1: Arr1, private[immutable] val length0: Int) extends FVectorImpl[A](_prefix1) {
+private sealed abstract class BigFVector[+A](
+                                              _prefix1: Arr1,
+                                              private[immutable] val suffix1: Arr1,
+                                              _buffer1: AnyRef,
+                                              _buffer2: AnyRef,
+                                              _buffer3: AnyRef,
+                                              _buffer4: AnyRef,
+                                              _bufferLengthsAndLength0: Int,
+                                            ) extends FVectorImpl[A](_prefix1, _buffer1, _buffer2, _buffer3, _buffer4, _bufferLengthsAndLength0) {
 
   protected[immutable] final def foreachRest[U](f: A => U): Unit = {
     val c = fVectorSliceCount
@@ -326,20 +405,23 @@ private sealed abstract class BigFVector[+A](_prefix1: Arr1, private[immutable] 
       foreachRec(fVectorSliceDim(c, i)-1, fVectorSlice(i), f)
       i += 1
     }
+    // TODO sufBuffer
   }
 }
 
 
 /** Empty fVector */
-private object FVector0 extends BigFVector[Nothing](empty1, empty1, 0) {
+private object FVector0 extends BigFVector[Nothing](empty1, empty1, null, null, null, null, 0) {
 
   def apply(index: Int): Nothing = throw ioob(index)
 
   override def updated[B >: Nothing](index: Int, elem: B): FVector[B] = throw ioob(index)
 
-  override def appended[B >: Nothing](elem: B): FVector[B] = new FVector1(wrap1(elem))
+  override def appended[B >: Nothing](elem: B): FVector[B] =
+    new FVector1(empty1, elem.asInstanceOf[AnyRef], null, null, null, 1 | (1 << PREBITS)) // most likely next operation will again be a append, so we put elem to the front
 
-  override def prepended[B >: Nothing](elem: B): FVector[B] = new FVector1(wrap1(elem))
+  override def prepended[B >: Nothing](elem: B): FVector[B] =
+    new FVector1(empty1, null, null, null, elem.asInstanceOf[AnyRef], 1 | (1 << SUFBITS)) // most likely next operation will again be a prepend, so we put elem to the back
 
   override def map[B](f: Nothing => B): FVector[B] = this
 
@@ -369,27 +451,90 @@ private object FVector0 extends BigFVector[Nothing](empty1, empty1, 0) {
 
   override protected[this] def ioob(index: Int): IndexOutOfBoundsException =
     new IndexOutOfBoundsException(s"$index is out of bounds (empty fVector)")
+
+  override private[immutable] def preBufferLen = 0
+
+  override private[immutable] def sufBufferLen = 0
 }
 
 /** Flat ArraySeq-like structure */
-private final class FVector1[+A](_data1: Arr1) extends FVectorImpl[A](_data1) {
+private final class FVector1[+A](
+                                  _data1: Arr1,
+                                  _buffer1: AnyRef,
+                                  _buffer2: AnyRef,
+                                  _buffer3: AnyRef,
+                                  _buffer4: AnyRef,
+                                  _bufferLengthsAndLength0: Int,
+                                ) extends FVectorImpl[A](_data1, _buffer1, _buffer2, _buffer3, _buffer4, _bufferLengthsAndLength0) {
+
+  @inline private[this] def copy(
+                                  _data1: Arr1 = prefix1,
+                                  _buffer1: AnyRef = buffer1,
+                                  _buffer2: AnyRef = buffer2,
+                                  _buffer3: AnyRef = buffer3,
+                                  _buffer4: AnyRef = buffer4,
+                                  _bufferLengthsAndLength0: Int = bufferLengthsAndLength0,
+                                ): FVector1[A] = {
+//    if ((_data1 eq prefix1) && (_buffer1 eq buffer1) && // todo test performance
+//      (_buffer2 eq buffer2) && (_buffer3 eq buffer3) &&
+//      (_buffer4 eq buffer4) && (_bufferLengthsAndLength0 eq bufferLengthsAndLength0))
+//      this
+//    else
+      new FVector1(_data1, _buffer1, _buffer2, _buffer3, _buffer4, _bufferLengthsAndLength0)
+  }
 
   @inline def apply(index: Int): A = {
-    if(index >= 0 && index < prefix1.length)
-      prefix1(index).asInstanceOf[A]
-    else throw ioob(index)
+    if (index < 0) {
+      throw ioob(index)
+    } else if (index < preBufferLen) (index: @switch) match {
+      case 0 => buffer1.asInstanceOf[A]
+      case 1 => buffer2.asInstanceOf[A]
+      case 2 => buffer3.asInstanceOf[A]
+      case 3 => buffer4.asInstanceOf[A]
+    } else if (index < preBufferLen + prefix1.length) {
+      prefix1(index - preBufferLen).asInstanceOf[A]
+    } else if (index < length) (length - index - 1: @switch) match {
+      case 0 => buffer4.asInstanceOf[A]
+      case 1 => buffer3.asInstanceOf[A]
+      case 2 => buffer2.asInstanceOf[A]
+      case 3 => buffer1.asInstanceOf[A]
+    } else throw ioob(index)
   }
 
   override def updated[B >: A](index: Int, elem: B): FVector[B] = {
-    if(index >= 0 && index < prefix1.length)
-      new FVector1(copyUpdate(prefix1, index, elem))
-    else throw ioob(index)
+    if (index < 0) {
+      throw ioob(index)
+    } else if (index < preBufferLen) (index: @switch) match {
+      case 0 => copy(_buffer1 = elem.asInstanceOf[AnyRef])
+      case 1 => copy(_buffer2 = elem.asInstanceOf[AnyRef])
+      case 2 => copy(_buffer3 = elem.asInstanceOf[AnyRef])
+      case 3 => copy(_buffer4 = elem.asInstanceOf[AnyRef])
+    } else if (index < preBufferLen + prefix1.length) {
+      copy(_data1 = copyUpdate(prefix1, index - preBufferLen, elem))
+    } else if (index < length) (length - index - 1: @switch) match {
+      case 0 => copy(_buffer4 = elem.asInstanceOf[AnyRef])
+      case 1 => copy(_buffer3 = elem.asInstanceOf[AnyRef])
+      case 2 => copy(_buffer2 = elem.asInstanceOf[AnyRef])
+      case 3 => copy(_buffer1 = elem.asInstanceOf[AnyRef])
+    } else throw ioob(index)
   }
 
   override def appended[B >: A](elem: B): FVector[B] = {
-    val len1 = prefix1.length
-    if(len1 < WIDTH) new FVector1(copyAppend1(prefix1, elem))
-    else new FVector2(prefix1, WIDTH, empty2, wrap1(elem), WIDTH+1)
+    if (preBufferLen + sufBufferLen < 4) (sufBufferLen: @switch) match { // space in buffer left
+      case 0 => copy(_buffer4 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
+      case 1 => copy(_buffer3 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
+      case 2 => copy(_buffer2 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
+      case 3 => copy(_buffer1 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
+    } else { // preBufferLen + sufBufferLen == 4, need to normalize!
+      val len1 = prefix1.length
+      val neededLen1 = length - 1 // +1 because of `elem`, -2 because of buffer1 and buffer4
+      assert(neededLen1 == len1 + 3) // exactly 3 more elems need to be put in the array structure
+      if (neededLen1 <= WIDTH) {
+        val startIdx =
+        new FVector1(copyAppend1(prefix1, elem))
+      }
+      else new FVector2(prefix1, WIDTH, empty2, wrap1(elem), WIDTH+1)
+    }
   }
 
   override def prepended[B >: A](elem: B): FVector[B] = {
@@ -433,7 +578,13 @@ private final class FVector1[+A](_data1: Arr1) extends FVectorImpl[A](_data1) {
 private final class FVector2[+A](_prefix1: Arr1, private[immutable] val len1: Int,
                                  private[immutable] val data2: Arr2,
                                  _suffix1: Arr1,
-                                 _length0: Int) extends BigFVector[A](_prefix1, _suffix1, _length0) {
+                                 _buffer1: AnyRef,
+                                 _buffer2: AnyRef,
+                                 _buffer3: AnyRef,
+                                 _buffer4: AnyRef,
+                                 _preBufferLen: Int,
+                                 _sufBufferLen: Int,
+                                 _length0: Int) extends BigFVector[A](_prefix1, _suffix1, _buffer1, _buffer2, _buffer3, _buffer4, _preBufferLen, _sufBufferLen, _length0) {
 
   @inline private[this] def copy(prefix1: Arr1 = prefix1, len1: Int = len1,
                                  data2: Arr2 = data2,
@@ -941,6 +1092,8 @@ private final class FVector6[+A](_prefix1: Arr1, private[immutable] val len1: In
                                  private[immutable] val prefix5: Arr5, private[immutable] val len12345: Int,
                                  private[immutable] val data6: Arr6,
                                  private[immutable] val suffix5: Arr5, private[immutable] val suffix4: Arr4, private[immutable] val suffix3: Arr3, private[immutable] val suffix2: Arr2, _suffix1: Arr1,
+                                 override private[immutable] val preBufferLen: Int,
+                                 override private[immutable] val sufBufferLen: Int,
                                  _length0: Int) extends BigFVector[A](_prefix1, _suffix1, _length0) {
 
   @inline private[this] def copy(prefix1: Arr1 = prefix1, len1: Int = len1,
@@ -952,6 +1105,10 @@ private final class FVector6[+A](_prefix1: Arr1, private[immutable] val len1: In
                                  suffix5: Arr5 = suffix5, suffix4: Arr4 = suffix4, suffix3: Arr3 = suffix3, suffix2: Arr2 = suffix2, suffix1: Arr1 = suffix1,
                                  length0: Int = length0) =
     new FVector6(prefix1, len1, prefix2, len12, prefix3, len123, prefix4, len1234, prefix5, len12345, data6, suffix5, suffix4, suffix3, suffix2, suffix1, length0)
+
+  @`inline` override private[immutable] def length0: Int = bufferLengthsAndLength0
+  @`inline` override private[immutable] def preBufferLen: Int = super.preBufferLen
+  @`inline` override private[immutable] def length0: Int = bufferLengthsAndLength0
 
   @inline def apply(index: Int): A = {
     if(index >= 0 && index < length0) {
@@ -1463,7 +1620,7 @@ final class FVectorBuilder[A] extends ReusableBuilder[A, FVector[A]] {
         a4 = new Arr4(WIDTH)
         a4(0) = copyPrepend(copyPrepend(v4.prefix1, v4.prefix2), v4.prefix3)
         System.arraycopy(d4, 0, a4, 1, d4.length)
-        a3 = copyOf(s3, WIDTH)
+        a3 = copyOf(s3, WIDTH) // TODO: could this be replaces by copyOrUse? (as the only case where it would not get copied is if it's full WIDTH. This implies no later modifications on s3 can occur!?)
         a2 = copyOf(s2, WIDTH)
         a4(d4.length+1) = a3
         a3(s3.length) = a2
@@ -1736,6 +1893,11 @@ private[immutable] object FVectorInline {
   final val WIDTH6 = 1 << BITS6
   final val LASTWIDTH = WIDTH << 1 // 1 extra bit in the last level to go up to Int.MaxValue (2^31-1) instead of 2^30:
   final val Log2ConcatFaster = 5
+
+  final val LENGTHMASK = WIDTH5 - 1
+  final val SUFBITS = BITS5
+  final val PREBITS = BITS5 + 3
+  final val BUFFERMASK = 7 // prefix- and suffix-buffer need 3 bits each
 
   type Arr1 = Array[AnyRef]
   type Arr2 = Array[Array[AnyRef]]

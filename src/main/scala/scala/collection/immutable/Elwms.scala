@@ -156,7 +156,7 @@ private[immutable] object ElmwsInline {
 final class ElmwsBuilder[A] extends mutable.ReusableBuilder[A, Elwms[A]] {
   val vb = new VectorBuilder[A]
   override def clear(): Unit = vb.clear()
-  override def result(): Elwms[A] = new ElwmsV(vb.result())
+  override def result(): Elwms[A] = new ElwmsV(vb.result()).shrunkenIfNeedBe
   override def addOne(elem: A): ElmwsBuilder.this.type = {
     vb.addOne(elem)
     this

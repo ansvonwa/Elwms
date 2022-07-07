@@ -16,7 +16,6 @@ package immutable
 import java.lang.Math.{abs, max => mmax, min => mmin}
 import java.util.Arrays.{copyOf, copyOfRange}
 import java.util.{Arrays, Spliterator}
-
 import scala.annotation.switch
 import scala.annotation.unchecked.uncheckedVariance
 import scala.collection.Stepper.EfficientSplit
@@ -24,6 +23,7 @@ import scala.collection.generic.DefaultSerializable
 import scala.collection.immutable.FVectorInline._
 import scala.collection.immutable.FVectorStatics._
 import scala.collection.mutable.ReusableBuilder
+import scala.reflect.ClassTag
 
 
 /** $factoryInfo
@@ -43,7 +43,7 @@ object FVector extends StrictOptimizedSeqFactory[FVector] {
         if (knownSize == 0) empty[E]
         else if (knownSize > 0 && knownSize <= WIDTH) {
           val a1: Arr1 = it match {
-            case as: ArraySeq.ofRef[_] if as.elemTag == classOf[AnyRef] =>
+            case as: ArraySeq.ofRef[_] if as.elemTag == ClassTag[AnyRef] =>
               as.unsafeArray.asInstanceOf[Arr1]
             case it: Iterable[E] =>
               val a1 = new Arr1(knownSize)
@@ -270,6 +270,8 @@ sealed abstract class FVector[+A] private[immutable] (private[immutable] final v
       val it = this.iterator
       while (it.hasNext) v = v :+ it.next()
       v
+    } else if (???) {
+      ???
     } else super.prependedAll(prefix)
   }
 
@@ -522,9 +524,9 @@ private final class FVector1[+A](
   override def appended[B >: A](elem: B): FVector[B] = {
     if (preBufferLen + sufBufferLen < 4) (sufBufferLen: @switch) match { // space in buffer left
       case 0 => copy(_buffer4 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
-      case 1 => copy(_buffer3 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
-      case 2 => copy(_buffer2 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
-      case 3 => copy(_buffer1 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
+      case 1 => copy(_buffer3 = buffer4, _buffer4 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
+      case 2 => copy(_buffer2 = buffer3, _buffer3 = buffer4, _buffer4 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
+      case 3 => copy(_buffer1 = buffer2, _buffer2 = buffer3, _buffer3 = buffer4, _buffer4 = elem.asInstanceOf[AnyRef], _bufferLengthsAndLength0 = bufferLengthsAndLength0 + (1 << SUFBITS))
     } else { // preBufferLen + sufBufferLen == 4, need to normalize!
       val len1 = prefix1.length
       val neededLen1 = length - 1 // +1 because of `elem`, -2 because of buffer1 and buffer4

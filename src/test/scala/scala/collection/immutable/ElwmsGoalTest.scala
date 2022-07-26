@@ -18,8 +18,8 @@ class ElwmsGoalTest extends AnyFunSpec {
   val goal1SlowFactor = 2.0
   @`inline` def goal1Factor(isFast: Boolean): Double = if (isFast) goal1FastFactor else goal1SlowFactor
 
-  val timeFast = 0.1
-  val timeSlow = 0.1
+  val timeFast = 0.5
+  val timeSlow = 0.5
   @`inline` def testTime(isFast: Boolean): Double = if (isFast) timeFast else timeSlow
 
   val smallCollectionSize = 5

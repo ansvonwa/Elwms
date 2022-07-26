@@ -57,9 +57,13 @@ private object Elwms0 extends Elwms[Nothing] {
   override def isEmpty: Boolean = true
   override def apply(i: Int): Nothing =
     throw new IndexOutOfBoundsException(s"called .apply($i) on empty collection")
-  override def map[B](f: Nothing => B): Elwms[B] = Elwms0
+  override def map[B](f: Nothing => B): Elwms[B] = this
   override def iterator: Iterator[Nothing] = Iterator.empty
-  override val headOption: Option[Nothing] = None
+  override def head: Nothing = throw new NoSuchElementException("head of empty seq")
+  override val headOption: None.type = None
+  override def tail: Nothing = throw new UnsupportedOperationException("tail of empty seq")
+  override def last: Nothing = throw new NoSuchElementException("last of empty seq")
+  override def init: Nothing = throw new UnsupportedOperationException("init of empty seq")
   override def toList: List[Nothing] = Nil
   override def toVector: Vector[Nothing] = Vector0
 }
@@ -72,6 +76,7 @@ private final class Elwms1[A] private[collection](val elem1: A) extends Elwms[A]
     else throw ioob(i)
   override def appended[B >: A](elem: B): Elwms[B] = new Elwms2(elem1, elem)
   override def iterator: Iterator[A] = Iterator.single(elem1)
+  override def map[B](f: A => B): Elwms[B] = new Elwms1[B](f(elem1))
   // TODO: other methods
 }
 
@@ -89,6 +94,7 @@ private final class Elwms2[A] private[collection](val elem1: A, val elem2: A) ex
       elem.asInstanceOf[AnyRef]
     ))
   override def iterator: Iterator[A] = Iterator(elem1, elem2)
+  override def map[B](f: A => B): Elwms[B] = new Elwms2[B](f(elem1), f(elem2))
   // TODO: other methods
 }
 
@@ -105,6 +111,7 @@ private final class ElwmsA[A](val data: Arr1) extends Elwms[A] {
       new ElwmsV[B](new Vector2(data, WIDTH, empty2, wrap1(elem), WIDTH + 1))
   }
   override def iterator: Iterator[A] = data.iterator.asInstanceOf[Iterator[A]]
+  override def map[B](f: A => B): Elwms[B] = new ElwmsA[B](mapElems1(data, f))
   override def last: A = data(data.length - 1).asInstanceOf[A]
   override def toVector: Vector[A] = new Vector1[A](_data1 = data)
 }

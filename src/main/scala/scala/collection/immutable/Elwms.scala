@@ -57,6 +57,7 @@ private object Elwms0 extends Elwms[Nothing] {
     throw new IndexOutOfBoundsException(s"called .apply($i) on empty collection")
   override def map[B](f: Nothing => B): Elwms[B] = Elwms0
   override def iterator: Iterator[Nothing] = Iterator.empty
+  override val headOption: Option[Nothing] = None
 }
 
 private final class Elwms1[A] private[collection](val elem1: A) extends Elwms[A] {

@@ -17,6 +17,7 @@ object Elwms extends StrictOptimizedSeqFactory[Elwms] {
 
 
   override def from[A](source: IterableOnce[A]): Elwms[A] = source match {
+    case empty if empty.knownSize == 0 => Elwms0
     case v: Vector[A] => new ElwmsV(v).shrunkenIfNeedBe
     case it: Iterable[A] => it.knownSize match {
       case i if i >= MIN_WIDTH => new ElwmsV[A](it.to(Vector)).shrunkenIfNeedBe
@@ -25,7 +26,7 @@ object Elwms extends StrictOptimizedSeqFactory[Elwms] {
         val iterator = it.iterator
         new Elwms2(iterator.next, iterator.next)
       case 1 => new Elwms1(it.head)
-      case 0 => Elwms0
+      case 0 => throw new IllegalArgumentException("should have been matched earlier") // Elwms0 // should not happen
       case -1 => newBuilder.addAll(it).result()
     }
     case _ => newBuilder.addAll(source).result()
@@ -52,12 +53,15 @@ abstract sealed class Elwms[+A]
 
 private object Elwms0 extends Elwms[Nothing] {
   override def length: Int = 0
+  override def knownSize: Int = 0
   override def isEmpty: Boolean = true
   override def apply(i: Int): Nothing =
     throw new IndexOutOfBoundsException(s"called .apply($i) on empty collection")
   override def map[B](f: Nothing => B): Elwms[B] = Elwms0
   override def iterator: Iterator[Nothing] = Iterator.empty
   override val headOption: Option[Nothing] = None
+  override def toList: List[Nothing] = Nil
+  override def toVector: Vector[Nothing] = Vector0
 }
 
 private final class Elwms1[A] private[collection](val elem1: A) extends Elwms[A] {
@@ -91,17 +95,18 @@ private final class Elwms2[A] private[collection](val elem1: A, val elem2: A) ex
 // TODO: Elwms{3,4} or {...,8}? and benchmarks
 
 
-private final class ElwmsA[A](val _data: Arr1) extends Elwms[A] {
-  override def length: Int = _data.length
-  override def apply(i: Int): A = _data(i).asInstanceOf[A]
+private final class ElwmsA[A](val data: Arr1) extends Elwms[A] {
+  override def length: Int = data.length
+  override def apply(i: Int): A = data(i).asInstanceOf[A]
   override def appended[B >: A](elem: B): Elwms[B] = {
-    if (_data.length < WIDTH)
-      new ElwmsA[B](copyAppend1(_data, elem))
+    if (data.length < WIDTH)
+      new ElwmsA[B](copyAppend1(data, elem))
     else
-      new ElwmsV[B](new Vector2(_data, WIDTH, empty2, wrap1(elem), WIDTH + 1))
+      new ElwmsV[B](new Vector2(data, WIDTH, empty2, wrap1(elem), WIDTH + 1))
   }
-  override def iterator: Iterator[A] = _data.iterator.asInstanceOf[Iterator[A]]
-  override def last: A = _data(_data.length - 1).asInstanceOf[A]
+  override def iterator: Iterator[A] = data.iterator.asInstanceOf[Iterator[A]]
+  override def last: A = data(data.length - 1).asInstanceOf[A]
+  override def toVector: Vector[A] = new Vector1[A](_data1 = data)
 }
 
 private[immutable] object ElwmsA {

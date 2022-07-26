@@ -103,6 +103,9 @@ class ElwmsGoalTest extends AnyFunSpec {
   testOp(_.sum, "_.sum", isListFast = true /*false*/, isVectorFast = false) // TODO: List is surprisingly fast to iterate over, but as it's O(n), should be `isListFast = false`.
   testOp(_.map(x => 2*x), "_.map(x => 2*x)", isListFast = false, isVectorFast = true /*false*/) // TODO: For unknown reasons, Vector0.map is much faster than Elwms0.map!?
 
+  testOp(_ :+ 1 :+ 2 :+ 3 :+ 4 :+ 5, "_ :+ 1 :+ 2 :+ 3 :+ 4 :+ 5", isListFast = false, isVectorFast = true)
+  testOp(0 +: 1 +: 2 +: 3 +: 4 +: _, "0 +: 1 +: 2 +: 3 +: 4 +: _", isListFast = true, isVectorFast = true)
+
   // hacky output
   it("print output") {
     println(s"fast operations took at most ${_goal1FastFactorRes.toFloat} times (<$goal1FastFactor) as long")

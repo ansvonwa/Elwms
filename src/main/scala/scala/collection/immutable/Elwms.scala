@@ -66,6 +66,8 @@ private object Elwms0 extends Elwms[Nothing] {
   override def init: Nothing = throw new UnsupportedOperationException("init of empty seq")
   override def toList: List[Nothing] = Nil
   override def toVector: Vector[Nothing] = Vector0
+  override def prepended[B >: Nothing](elem: B): Elwms[B] = new Elwms1[B](elem)
+  override def appended[B >: Nothing](elem: B): Elwms[B] = new Elwms1[B](elem)
 }
 
 private final class Elwms1[A] private[collection](val elem1: A) extends Elwms[A] {
@@ -74,6 +76,7 @@ private final class Elwms1[A] private[collection](val elem1: A) extends Elwms[A]
   override def apply(i: Int): A =
     if (i == 0) elem1
     else throw ioob(i)
+  override def prepended[B >: A](elem: B): Elwms[B] = new Elwms2(elem, elem1)
   override def appended[B >: A](elem: B): Elwms[B] = new Elwms2(elem1, elem)
   override def iterator: Iterator[A] = Iterator.single(elem1)
   override def map[B](f: A => B): Elwms[B] = new Elwms1[B](f(elem1))
@@ -87,11 +90,17 @@ private final class Elwms2[A] private[collection](val elem1: A, val elem2: A) ex
     if (i == 0) elem1
     else if (i == 1) elem2
     else throw ioob(i)
+  override def prepended[B >: A](elem: B): Elwms[B] =
+    new ElwmsA(Array(
+      elem.asInstanceOf[AnyRef],
+      elem1.asInstanceOf[AnyRef],
+      elem2.asInstanceOf[AnyRef],
+    ))
   override def appended[B >: A](elem: B): Elwms[B] =
     new ElwmsA(Array(
       elem1.asInstanceOf[AnyRef],
       elem2.asInstanceOf[AnyRef],
-      elem.asInstanceOf[AnyRef]
+      elem.asInstanceOf[AnyRef],
     ))
   override def iterator: Iterator[A] = Iterator(elem1, elem2)
   override def map[B](f: A => B): Elwms[B] = new Elwms2[B](f(elem1), f(elem2))
@@ -104,6 +113,12 @@ private final class Elwms2[A] private[collection](val elem1: A, val elem2: A) ex
 private final class ElwmsA[A](val data: Arr1) extends Elwms[A] {
   override def length: Int = data.length
   override def apply(i: Int): A = data(i).asInstanceOf[A]
+  override def prepended[B >: A](elem: B): Elwms[B] = {
+    if (data.length < WIDTH)
+      new ElwmsA[B](copyPrepend1(elem, data))
+    else
+      new ElwmsV[B](new Vector2(wrap1(elem), 1, empty2, data, WIDTH + 1))
+  }
   override def appended[B >: A](elem: B): Elwms[B] = {
     if (data.length < WIDTH)
       new ElwmsA[B](copyAppend1(data, elem))
@@ -132,6 +147,8 @@ private final class ElwmsV[+A](underlying: Vector[A]) extends Elwms[A] {
   @`inline` override def iterator: Iterator[A] = underlying.iterator
   override def headOption: Option[A] = underlying.headOption
   override def map[B](f: A => B): Elwms[B] = newOrReuse(underlying.map(f))
+  override def prepended[B >: A](elem: B): Elwms[B] = new ElwmsV[B](underlying.prepended(elem))
+  override def appended[B >: A](elem: B): Elwms[B] = new ElwmsV[B](underlying.appended(elem))
 
   @`inline` private[immutable] def newOrReuse[B](newUnderlying: Vector[B]): ElwmsV[B] =
     if (newUnderlying eq underlying) this.asInstanceOf[ElwmsV[B]]

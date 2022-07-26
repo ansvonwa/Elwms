@@ -87,7 +87,7 @@ class ElwmsGoalTest extends AnyFunSpec {
             _ ++ (1 to bigCollectionSize),
           ))
             describe(s"containing ${init(emptyOther).size} elements") {
-              it(s"should take at most $goal1FastFactor times as long") {
+              it(s"should take at most ${if (isFast) goal1FastFactor else goal1SlowFactor} times as long") {
                 checkTimeFactor(op, isFast, emptyOther, init)
               }
             }

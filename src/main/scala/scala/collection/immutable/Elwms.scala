@@ -57,10 +57,10 @@ private object Elwms0 extends Elwms[Nothing] {
   override def isEmpty: Boolean = true
   override def apply(i: Int): Nothing =
     throw new IndexOutOfBoundsException(s"called .apply($i) on empty collection")
-  override def map[B](f: Nothing => B): Elwms[B] = this
+  override def map[B](f: Nothing => B): Elwms[B] = this // why is that >2 times slower than the same thing in Vector0?? <Sad JIT noises>
   override def iterator: Iterator[Nothing] = Iterator.empty
   override def head: Nothing = throw new NoSuchElementException("head of empty seq")
-  override val headOption: None.type = None
+  override def headOption: None.type = None
   override def tail: Nothing = throw new UnsupportedOperationException("tail of empty seq")
   override def last: Nothing = throw new NoSuchElementException("last of empty seq")
   override def init: Nothing = throw new UnsupportedOperationException("init of empty seq")

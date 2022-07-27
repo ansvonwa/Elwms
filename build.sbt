@@ -5,6 +5,7 @@ ThisBuild / scalaVersion := "2.13.8"
 lazy val benchmark = project
   .in(file("benchmark"))
   .dependsOn(root)
+  .enablePlugins(JmhPlugin)
   .settings(
   )
 

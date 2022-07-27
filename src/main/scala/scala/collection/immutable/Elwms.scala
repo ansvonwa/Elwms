@@ -1,5 +1,6 @@
 package scala.collection.immutable
 
+import scala.annotation.switch
 import scala.collection.generic.DefaultSerializable
 import scala.collection.{IterableFactoryDefaults, SeqFactory, StrictOptimizedSeqFactory, mutable}
 import scala.collection.immutable.ElmwsInline._
@@ -63,6 +64,7 @@ private object Elwms0 extends Elwms[Nothing] {
   override def headOption: None.type = None
   override def tail: Nothing = throw new UnsupportedOperationException("tail of empty seq")
   override def last: Nothing = throw new NoSuchElementException("last of empty seq")
+  override def lastOption: None.type = None
   override def init: Nothing = throw new UnsupportedOperationException("init of empty seq")
   override def toList: List[Nothing] = Nil
   override def toVector: Vector[Nothing] = Vector0
@@ -78,6 +80,12 @@ private final class Elwms1[A] private[collection](val elem1: A) extends Elwms[A]
     else throw ioob(i)
   override def prepended[B >: A](elem: B): Elwms[B] = new Elwms2(elem, elem1)
   override def appended[B >: A](elem: B): Elwms[B] = new Elwms2(elem1, elem)
+  override def tail: Elwms[A] = Elwms0
+  override def init: Elwms[A] = Elwms0
+  override def head: A = elem1
+  override def headOption: Some[A] = Some(elem1)
+  override def last: A = elem1
+  override def lastOption: Some[A] = Some(elem1)
   override def iterator: Iterator[A] = Iterator.single(elem1)
   override def map[B](f: A => B): Elwms[B] = new Elwms1[B](f(elem1))
   // TODO: other methods
@@ -102,6 +110,12 @@ private final class Elwms2[A] private[collection](val elem1: A, val elem2: A) ex
       elem2.asInstanceOf[AnyRef],
       elem.asInstanceOf[AnyRef],
     ))
+  override def tail: Elwms[A] = new Elwms1[A](elem2)
+  override def init: Elwms[A] = new Elwms1[A](elem1)
+  override def head: A = elem1
+  override def headOption: Some[A] = Some(elem1)
+  override def last: A = elem2
+  override def lastOption: Some[A] = Some(elem2)
   override def iterator: Iterator[A] = Iterator(elem1, elem2)
   override def map[B](f: A => B): Elwms[B] = new Elwms2[B](f(elem1), f(elem2))
   // TODO: other methods
@@ -109,7 +123,9 @@ private final class Elwms2[A] private[collection](val elem1: A, val elem2: A) ex
 
 // TODO: Elwms{3,4} or {...,8}? and benchmarks
 
-
+/**
+ * Sqeuence of length: SPECIALIZED_SIZE < length <= WIDTH
+ */
 private final class ElwmsA[A](val data: Arr1) extends Elwms[A] {
   override def length: Int = data.length
   override def apply(i: Int): A = data(i).asInstanceOf[A]
@@ -125,10 +141,23 @@ private final class ElwmsA[A](val data: Arr1) extends Elwms[A] {
     else
       new ElwmsV[B](new Vector2(data, WIDTH, empty2, wrap1(elem), WIDTH + 1))
   }
+  override def tail: Elwms[A] = new ElwmsA[A](data.tail).shrunkenIfNeedBe
+  override def init: Elwms[A] = new ElwmsA[A](data.init).shrunkenIfNeedBe
+  override def head: A = data.head.asInstanceOf[A]
+  override def headOption: Some[A] = Some(data.head.asInstanceOf[A])
+  override def last: A = data.last.asInstanceOf[A]
+  override def lastOption: Some[A] = Some(data.last.asInstanceOf[A])
   override def iterator: Iterator[A] = data.iterator.asInstanceOf[Iterator[A]]
   override def map[B](f: A => B): Elwms[B] = new ElwmsA[B](mapElems1(data, f))
-  override def last: A = data(data.length - 1).asInstanceOf[A]
   override def toVector: Vector[A] = new Vector1[A](_data1 = data)
+
+  private[immutable] def shrunkenIfNeedBe: Elwms[A] =
+    (data.length: @switch) match {
+      case 0 => Elwms0
+      case 1 => new Elwms1[A](head)
+      case 2 => new Elwms2[A](head, last)
+      case _ => this
+    }
 }
 
 private[immutable] object ElwmsA {
@@ -140,15 +169,22 @@ private[immutable] object ElwmsA {
   }
 }
 
-
+/**
+ * Sequence of length >= MIN_WIDTH
+ */
 private final class ElwmsV[+A](underlying: Vector[A]) extends Elwms[A] {
   override def apply(i: Int): A = underlying(i)
   @`inline` override def length: Int = underlying.length
   @`inline` override def iterator: Iterator[A] = underlying.iterator
-  override def headOption: Option[A] = underlying.headOption
   override def map[B](f: A => B): Elwms[B] = newOrReuse(underlying.map(f))
   override def prepended[B >: A](elem: B): Elwms[B] = new ElwmsV[B](underlying.prepended(elem))
   override def appended[B >: A](elem: B): Elwms[B] = new ElwmsV[B](underlying.appended(elem))
+  override def tail: Elwms[A] = new ElwmsV[A](underlying.tail).shrunkenIfNeedBe
+  override def init: Elwms[A] = new ElwmsV[A](underlying.init).shrunkenIfNeedBe
+  override def head: A = underlying.head
+  override def headOption: Some[A] = Some(underlying.head)
+  override def last: A = underlying.last
+  override def lastOption: Some[A] = Some(underlying.last)
 
   @`inline` private[immutable] def newOrReuse[B](newUnderlying: Vector[B]): ElwmsV[B] =
     if (newUnderlying eq underlying) this.asInstanceOf[ElwmsV[B]]
@@ -157,8 +193,11 @@ private final class ElwmsV[+A](underlying: Vector[A]) extends Elwms[A] {
   private[immutable] def shrunkenIfNeedBe: Elwms[A] = {
     val len = length
     if (len >= MIN_WIDTH) this
-    else underlying match {
-      case Vector0 => Elwms0
+    else if (len <= SPECIALIZED_SIZE) len match {
+      case 0 => Elwms0
+      case 1 => new Elwms1[A](head)
+      case 2 => new Elwms2[A](head, last)
+    } else underlying match {
       case v1: Vector1[A] => new ElwmsA[A](v1.prefix1)
       case v2: Vector2[A] =>
         val data = new Arr1(len)
